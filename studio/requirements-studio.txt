@@ -1,0 +1,10 @@
+# Studio-only Python packages. Do not duplicate ../requirements.txt (opencv, omegaconf, hydra, etc.).
+fastapi>=0.111.0
+uvicorn[standard]>=0.29.0
+pydantic>=2.7.0
+pydantic-settings>=2.2.0
+aiosqlite>=0.20.0
+aiofiles>=23.2.1
+python-multipart>=0.0.9
+ffmpeg-python>=0.2.0
+pycolmap>=0.6.0

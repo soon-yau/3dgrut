@@ -1,0 +1,37 @@
+# Multi-stage: COLMAP base + conda 3DGRUT + Studio backend + optional static frontend.
+# Build from repository root:
+#   docker build -f studio/Dockerfile.studio -t 3dgrut-studio .
+
+FROM colmap/colmap:latest
+
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ffmpeg wget git curl ca-certificates \
+    nodejs npm \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN curl -fsSL -o /tmp/miniconda.sh https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh \
+    && bash /tmp/miniconda.sh -b -p /opt/conda && rm /tmp/miniconda.sh
+ENV PATH="/opt/conda/bin:${PATH}"
+
+WORKDIR /workspace
+COPY . /workspace
+
+# Expect install_env.sh to work inside container (CUDA/driver must match host)
+ARG CUDA_VERSION=12.8.1
+ENV CUDA_VERSION=${CUDA_VERSION}
+RUN chmod +x install_studio.sh install_env.sh \
+    && bash install_studio.sh 3dgrut WITH_GCC11 --skip-frontend --docker-mode || true
+
+# If install_env fails in generic CI, user should build with host-matched CUDA image instead.
+RUN if [ -d /opt/conda/envs/3dgrut ]; then \
+      /opt/conda/bin/conda run -n 3dgrut pip install -r studio/requirements-studio.txt; \
+    fi
+
+RUN cd studio/frontend && npm install && npm run build || true
+
+EXPOSE 8000
+ENV STUDIO_REPO_ROOT=/workspace
+ENV STUDIO_DATA_DIR=/data/studio_projects
+CMD ["/opt/conda/bin/conda", "run", "-n", "3dgrut", "--no-capture-output", \
+     "uvicorn", "studio.backend.main:app", "--host", "0.0.0.0", "--port", "8000"]
