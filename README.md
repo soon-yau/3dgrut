@@ -64,6 +64,14 @@ For projects that require a fast, modular, and production-ready Gaussian Splatti
 - CUDA 11.8+ Compatible System
 - For good performance with 3DGRT, we recommend using an NVIDIA GPU with Ray Tracing (RT) cores.
 - Currently, only Linux environments are supported by the included install script (Windows support coming soon!)
+- [Conda](https://docs.conda.io/) (e.g. [Miniconda](https://docs.conda.io/en/latest/miniconda.html)) is required for the setup below. On Linux x86_64, download and install it with:
+
+```sh
+curl -fsSL -O https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh
+bash Miniconda3-latest-Linux-x86_64.sh
+```
+
+After installation, open a new terminal or run `source ~/.bashrc` (or `source ~/.zshrc`) so that `conda` is on your `PATH`.
 
 <details>
 <summary> NOTE: gcc versions >11 (expand for details)</summary>
@@ -255,8 +263,17 @@ python train.py --config-name apps/nerf_synthetic_3dgut.yaml path=data/nerf_synt
 
 ### To visualize a pre-trained checkpoint
 ```bash
-python train.py --config-name apps/nerf_synthetic_3dgut.yaml path=data/nerf_synthetic/lego with_gui=True test_last=False export_ingp.enabled=False resume=runs/lego/ckpt_last.pt
+python train.py --config-name apps/nerf_synthetic_3dgut.yaml path=data/nerf_synthetic/lego with_gui=True test_last=False resume=runs/lego/ckpt_last.pt
 ```
+
+```bash
+python train.py \
+  --config-name apps/colmap_3dgut.yaml \
+  path=mipnerf360_data/bonsai \
+  with_viser_gui=True \
+  test_last=False \
+  resume=runs/bonsai_3dgut/<your_run_folder>/ckpt_last.pt
+  ```
 
 On startup, you might see a black screen, but you can use the GUI to navigate to the correct camera views:
 <img src="assets/train_gui_initial.jpg" height="400"/>
