@@ -281,6 +281,21 @@ On startup, you might see a black screen, but you can use the GUI to navigate to
 
 Similarly, you can use the viser GUI by setting `with_viser_gui=True` instead of `with_gui=True`.
 
+```
+python train.py --config-name apps/colmap_3dgut_mcmc.yaml \
+    path=/workspace/gym_empty/ \
+    out_dir=/workspace/runs/ \
+    n_iterations=60000 \
+    checkpoint.iterations=[5000,10000,30000,60000] \
+    experiment_name=gym_empty \
+    with_viser_gui=True
+```
+
+```
+git clone --recursive https://github.com/cvg/Hierarchical-Localization.git
+cd Hierarchical-Localization
+pip install -e .
+```
 
 ## 📋 4. Evaluations
 
