@@ -1,48 +1,73 @@
-FROM ubuntu:24.04
+FROM ghcr.io/nerfstudio-project/nerfstudio:latest
 
-ARG CUDA_VERSION=11.8.0
-ENV CUDA_VERSION=${CUDA_VERSION}
+USER root
 ENV DEBIAN_FRONTEND=noninteractive
-RUN apt-get update \
-    && DEBIAN_FRONTEND=noninteractive apt-get install -y --allow-unauthenticated ca-certificates \
-    && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
-    wget git \
-    curl \
-    build-essential \
-    gcc-11 g++-11 \
-    libgl1-mesa-dev \
-    libglib2.0-0 \
+
+# ----------------------------------------------------
+# 1. System dependencies
+# (Added CGAL, FLANN, METIS, and LZ4 to permanently shut up COLMAP's CMake)
+# ----------------------------------------------------
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ninja-build build-essential git git-lfs curl wget \
+    libpcre2-dev \
+    libsuitesparse-dev libatlas-base-dev libboost-all-dev \
+    libgoogle-glog-dev libgflags-dev libfreeimage-dev libglew-dev \
+    libceres-dev \
+    libsqlite3-dev \
+    libcgal-dev \
+    libflann-dev \
+    libmetis-dev \
+    liblz4-dev \
     && rm -rf /var/lib/apt/lists/*
 
-RUN curl -o ~/miniconda.sh https://repo.anaconda.com/miniconda/Miniconda3-py311_25.1.1-2-Linux-x86_64.sh && \
-    bash ~/miniconda.sh -b -p /opt/conda && \
-    rm ~/miniconda.sh && \
-    /opt/conda/bin/conda install -y python=${PYTHON_VERSION} && \
-    /opt/conda/bin/conda clean -ya
-ENV PATH=/opt/conda/bin:$PATH
-RUN conda init
+# ----------------------------------------------------
+# 2. Modern CMake (Bypass pip entirely)
+# ----------------------------------------------------
+RUN wget -qO- "https://cmake.org/files/v3.29/cmake-3.29.3-linux-x86_64.tar.gz" | \
+    tar --strip-components=1 -xz -C /usr/local
 
-ENV NVIDIA_VISIBLE_DEVICES=all
-ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility,graphics
-ENV FORCE_CUDA=1
+# ----------------------------------------------------
+# 3. Build and install GLOMAP
+# ----------------------------------------------------
+WORKDIR /opt
+RUN git clone https://github.com/colmap/glomap.git && \
+    cd glomap && \
+    mkdir build && cd build && \
+    cmake .. -GNinja -DCMAKE_BUILD_TYPE=Release && \
+    ninja install && \
+    cd / && rm -rf /opt/glomap
 
-# # Make sure TORCH_CUDA_ARCH_LIST matches the pytorch wheel setting.
-# # Reference: https://github.com/pytorch/pytorch/blob/main/.ci/manywheel/build_cuda.sh#L54
-# #
-# # (cuda11) $ python -c "import torch; print(torch.version.cuda, torch.cuda.get_arch_list())"
-# # 11.8 ['sm_50', 'sm_60', 'sm_61', 'sm_70', 'sm_75', 'sm_80', 'sm_86', 'sm_37', 'sm_90', 'compute_37']
-# #
-# # (cuda12) $ python -c "import torch; print(torch.version.cuda, torch.cuda.get_arch_list())"
-# # 12.8 ['sm_75', 'sm_80', 'sm_86', 'sm_90', 'sm_100', 'sm_120', 'compute_120']
-# #
-# RUN if   [ "$CUDA_VERSION" = "11.8.0" ]; then                                                        \
-#       echo 'export TORCH_CUDA_ARCH_LIST="7.0;7.5;8.0;8.6;9.0"' >> /etc/profile.d/cuda_arch.sh;       \
-#     elif [ "$CUDA_VERSION" = "12.8.1" ]; then                                                        \
-#       echo 'export TORCH_CUDA_ARCH_LIST="7.5;8.0;8.6;9.0;10.0;12.0"' >> /etc/profile.d/cuda_arch.sh; \
-#     fi
+# ----------------------------------------------------
+# 4. Clone hloc
+# ----------------------------------------------------
+RUN git clone --recursive https://github.com/cvg/Hierarchical-Localization/ /opt/hloc
 
+# ----------------------------------------------------
+# 5. Python stack (as root to write into system site-packages)
+# ----------------------------------------------------
+RUN python -m pip install --upgrade pip && \
+    python -m pip install --no-cache-dir pycolmap opencv-python-headless kornia && \
+    python -m pip install -e /opt/hloc
+
+# ----------------------------------------------------
+# 5b. Pre-cache model weights at build time
+# ----------------------------------------------------
+ENV TORCH_HOME=/opt/model_cache
+# NetVLAD .mat checkpoints (hloc stores them at $TORCH_HOME/hub/netvlad/<name>.mat)
+RUN mkdir -p /opt/model_cache/hub/netvlad && \
+    wget -q -O /opt/model_cache/hub/netvlad/VGG16-NetVLAD-Pitts30K.mat \
+        https://cvg-data.inf.ethz.ch/hloc/netvlad/Pitts30K_struct.mat && \
+    wget -q -O /opt/model_cache/hub/netvlad/VGG16-NetVLAD-TokyoTM.mat \
+        https://cvg-data.inf.ethz.ch/hloc/netvlad/TokyoTM_struct.mat && \
+    chmod -R a+rX /opt/model_cache
+
+# ----------------------------------------------------
+# 6. Fix permissions and switch to unprivileged user
+# ----------------------------------------------------
+RUN chown -R 1000:1000 /opt/hloc && \
+    mkdir -p /workspace && chown 1000:1000 /workspace
+ENV HOME=/workspace
+USER 1000
 WORKDIR /workspace
-COPY . .
 
-RUN CUDA_VERSION=$CUDA_VERSION bash ./install_env.sh 3dgrut WITH_GCC11 
-RUN echo "conda activate 3dgrut" >> ~/.bashrc
+CMD ["/bin/bash"]
