@@ -64,9 +64,17 @@ RUN mkdir -p /opt/model_cache/hub/netvlad && \
 # ----------------------------------------------------
 # 6. Fix permissions and switch to unprivileged user
 # ----------------------------------------------------
-RUN chown -R 1000:1000 /opt/hloc && \
-    mkdir -p /workspace && chown 1000:1000 /workspace
-ENV HOME=/workspace
+# TORCH_HOME=/opt/model_cache is root-written during build; runtime user must own it
+# so torch.hub can create hub/checkpoints. HF caches go under /workspace (writable).
+RUN chown -R 1000:1000 /opt/hloc /opt/model_cache && \
+    mkdir -p /workspace/.cache/huggingface/hub \
+             /workspace/.cache/huggingface/transformers && \
+    mkdir -p /workspace && \
+    chown -R 1000:1000 /workspace
+ENV HOME=/workspace \
+    HF_HOME=/workspace/.cache/huggingface \
+    HUGGINGFACE_HUB_CACHE=/workspace/.cache/huggingface/hub \
+    TRANSFORMERS_CACHE=/workspace/.cache/huggingface/transformers
 USER 1000
 WORKDIR /workspace
 

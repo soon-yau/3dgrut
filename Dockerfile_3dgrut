@@ -1,0 +1,70 @@
+# 3DGRUT image — tuned for NVIDIA RTX A6000 (Ampere, sm_86).
+#
+# Default stack matches the project install script: CUDA 11.8 + PyTorch 2.1.2
+# (see install_env.sh). Use CUDA 12.8.1 only for Blackwell (e.g. RTX 5090), not A6000.
+#
+# README references:
+#   https://github.com/soon-yau/3dgrut/blob/main/README.md
+#   https://github.com/nv-tlabs/3dgrut/blob/main/README.md
+#
+# Build from the repository root (submodules must be initialized before building):
+#   git submodule update --init --recursive
+#   docker build -f Dockerfile_3dgrut -t 3dgrut:a6000 .
+#
+# Run — mount only /data, NOT /workspace.
+# Mounting -v "$PWD":/workspace would overwrite the submodules initialized during
+# the build with the host's uninitialized submodule directories, breaking compilation.
+#   docker run --rm -it --gpus all --ipc=host --net=host -v /host/data:/data 3dgrut:a6000
+#
+# If you need live code editing, initialize submodules on the host first:
+#   git submodule update --init --recursive
+#   docker run --rm -it --gpus all --ipc=host --net=host -v "$PWD":/workspace 3dgrut:a6000
+
+FROM ubuntu:24.04
+
+ARG CUDA_VERSION=11.8.0
+ARG PYTHON_VERSION=3.11
+
+ENV CUDA_VERSION=${CUDA_VERSION}
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --allow-unauthenticated ca-certificates \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
+        wget git curl \
+        build-essential \
+        gcc-11 g++-11 \
+        libgl1-mesa-dev \
+        libglib2.0-0 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Miniconda (Python 3.11 installer); align env Python with ARG PYTHON_VERSION
+RUN curl -fsSL -o /tmp/miniconda.sh \
+        https://repo.anaconda.com/miniconda/Miniconda3-py311_25.1.1-2-Linux-x86_64.sh \
+    && bash /tmp/miniconda.sh -b -p /opt/conda \
+    && rm /tmp/miniconda.sh \
+    && /opt/conda/bin/conda install -y python=${PYTHON_VERSION} \
+    && /opt/conda/bin/conda clean -ya
+
+ENV PATH=/opt/conda/bin:$PATH
+RUN conda init bash
+
+ENV NVIDIA_VISIBLE_DEVICES=all
+ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility,graphics
+ENV FORCE_CUDA=1
+
+WORKDIR /workspace
+COPY . .
+
+# Ensure submodules are present regardless of whether the host initialized them.
+# git safe.directory is needed because COPY sets ownership to root inside the build.
+RUN git config --global --add safe.directory /workspace \
+    && git submodule update --init --recursive
+
+# Ubuntu 24.04 ships gcc>11; install_env.sh requires WITH_GCC11 there.
+RUN CUDA_VERSION=${CUDA_VERSION} bash ./install_env.sh 3dgrut WITH_GCC11
+
+RUN echo "conda activate 3dgrut" >> /root/.bashrc
+
+# Login shell loads ~/.bashrc so conda env is active in interactive containers
+CMD ["bash", "-l"]
